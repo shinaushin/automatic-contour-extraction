@@ -68,5 +68,16 @@ rot_pcd.colors = downpcd.colors
 rot_pcd.estimate_normals(search_param=open3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30))
 # open3d.visualization.draw_geometries([rot_pcd])
 
-# TODO: visualize rotated point cloud with matplotlib
-
+# visualize rotated point cloud with matplotlib
+pts = np.asarray(rot_pcd.points)
+print(len(pts))
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
+x = pts[:,0]
+y = pts[:,1]
+z = pts[:,2]
+ax.scatter(x[::3], y[::3], z[::3])
+ax.set_xlabel('Normalized x')
+ax.set_ylabel('Normalized y')
+ax.set_zlabel('Normalized z')
+plt.show()
