@@ -1,6 +1,8 @@
-# locally compare magnitude of vector from point in pcd to center of skull
-# pick point, get k nearest neighbors, calc dist to center
-# k-means clustering b/c shorter dists correspond to inner layer, longer dists
-# are outer layer
+# center mesh about (0,0,0)
+# calculate dot product of vector v of each point in mesh and its normal
+# if dot product < 0, remove point
 
-# may not work well for complex curves on skull, such as near eyes
+# technically, this method would only reliably work for convex meshes
+# hopefully this works good enough
+
+

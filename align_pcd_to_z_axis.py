@@ -37,7 +37,7 @@ downpcd = pcd.voxel_down_sample(voxel_size=0.15)
 downpcd = normalize(downpcd)
 
 # let user pick point on top of skull
-print("Shift+click to select point approximately at top of skull.\n")
+print("Shift+click to select point approximately at top of skull. Exit window when done.\n")
 vis = open3d.visualization.VisualizerWithEditing()
 vis.create_window()
 vis.add_geometry(downpcd)
