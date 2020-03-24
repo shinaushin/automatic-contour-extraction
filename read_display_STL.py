@@ -21,7 +21,7 @@ for file in os.listdir("./STL"):
         pcd.points = open3d.utility.Vector3dVector(pts)
 
         downpcd = pcd.voxel_down_sample(voxel_size=0.15)
-        downpcd.estimate_normals(search_param=open3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30))
+        downpcd.estimate_normals(search_param=open3d.geometry.KDTreeSearchParamHybrid(radius=0.3, max_nn=30))
         print(np.asarray(downpcd.points).shape)
         print("---")
 
