@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 import os
+from scipy.spatial import ConvexHull
 from scipy.spatial.transform import Rotation as R
 
 import open3d
@@ -73,14 +74,9 @@ class Mesh:
             open3d.geometry.KDTreeSearchParamHybrid(radius=self.voxel_size*2,
             max_nn=30))
 
-    def crop_geometry(self):
+    def extract_labeled_data(self):
         """
-        User determines geometry to crop from original point cloud. Those points
-        are subtracted from original point cloud to create defect. The cropped
-        point cloud is transformed to different poses and projected onto
-        original point cloud to generate more skull defect samples. Label
-        matrices are also created, indicating which points are associated to
-        defect contour.
+        ...
 
         Args:
             pcd: point cloud
@@ -89,34 +85,64 @@ class Mesh:
             skull defect point cloud samples
             label matrix for each skull defect point cloud sample
         """
-        pass
+        diameter = np.linalg.norm(np.asarray(self.skull.get_max_bound()) -
+            np.asarray(self.skull.get_min_bound()))
+        
+        camera = [diameter/3.5, diameter/3.5, diameter]
+        radius = diameter/2.15 # max: 2.5 # arbitrarily decided, hard-coded
+        camera_frame = open3d.geometry.TriangleMesh.create_coordinate_frame(
+            origin=camera)
 
-        """
-        print("Demo for manual geometry cropping")
-        print(
-            "1) Press 'Y' twice to align geometry with negative direction of y-axis"
-        )
-        print("2) Press 'K' to lock screen and to switch to selection mode")
-        print("3) Drag for rectangle selection,")
-        print("   or use ctrl + left click for polygon selection")
-        print("4) Press 'C' to get a selected geometry and to save it")
-        print("5) Press 'F' to switch to freeview mode")
-        open3d.visualization.draw_geometries_with_editing([self.skull])
+        defect = open3d.geometry.PointCloud()
+        defect_pcd, _ = self.skull.hidden_point_removal(camera, radius)
+        defect_vertices = [list(pt) for pt in defect_pcd.vertices if pt[2] > 0.20]
+        defect_indices = [i for i in range(len(defect_pcd.vertices)) if defect_pcd.vertices[i][2] > 0.20]
+        defect.points = open3d.utility.Vector3dVector(np.asarray(defect_vertices))
 
-        # save cropped point cloud
-        # load cropped point cloud
-        # filter out bottom half of points b/c defect is only on top of skull
+        # project points with +z value onto xy plane 
+        defect_on_xy = np.asarray(defect_vertices)[:,0:2]
 
-        # How rotate defect to other poses and extract those points?
-        # - for each point in rotated defect pcd, find closest point on total
-        #   point cloud
-        # - subtract closest points out
+        # find points that form convex hull of defect using scipy
+        hull = ConvexHull(defect_on_xy)
+        print(len(defect_on_xy))
+        print(hull.vertices)
+        defect_contour = [defect_vertices[i] for i in hull.vertices]
+        interior_defect = [pt for pt in defect_vertices if pt not in defect_contour]
 
-        # How label points as defect after subtraction
-        # - extract boundary of rotated defect point cloud
-        # - for each point on boundary of rotated defect point cloud, find
-        #   closest point on total point cloud
-        """
+        # subtract those points from defect_vertices
+        #   and remove remaining defect_vertices from skull.points (TODO)
+        defect_skull = open3d.geometry.PointCloud()
+        defect_skull_vertices = [list(pt)
+            for pt in np.asarray(self.skull.points)
+            if pt not in np.asarray(interior_defect)]
+        defect_skull.points = open3d.utility.Vector3dVector(np.asarray(defect_skull_vertices))
+
+        # points on convex hull should be labelled as defect contour
+        [x_max, y_max, z_max] = defect_skull.get_max_bound()
+        [x_min, y_min, z_min] = defect_skull.get_min_bound()
+        res = 15
+        x_step = (x_max-x_min)/res
+        y_step = (y_max-y_min)/res
+        z_step = (z_max-z_min)/res
+        
+        input_data = np.zeros((res, res, res))
+        for i in range(res):
+            for j in range(res):
+                for k in range(res):
+                    bbox = open3d.geometry.AxisAlignedBoundingBox(min_bound=np.asarray([x_min+i*x_step, y_min+j*y_step, z_min+k*z_step]).T,
+                                               max_bound=np.asarray([x_min+(i+1)*x_step, y_min+(j+1)*y_step, z_min+(k+1)*z_step]).T)
+                    cropped = defect_skull.crop(bbox)
+                    if cropped.has_points():
+                        input_data[i,j,k] = 1
+                        for l in np.asarray(cropped.points):
+                            # print(l)
+                            # print(defect_contour)
+                            if l in np.asarray(defect_contour):
+                                input_data[i,j,k] = 2
+
+        # for i in input_data:
+        #     print(i)
+        # open3d.visualization.draw_geometries([defect_skull, camera_frame])
 
     @staticmethod
     def normalize(pcd):
@@ -175,16 +201,16 @@ class Mesh:
         radius = diameter * 100
 
         pts = []
-        surface = open3d.geometry.PointCloud()
+        # surface = open3d.geometry.PointCloud()
         for i in range(len(camera)):
             pcd, _ = self.skull.hidden_point_removal(camera[i], radius)
             pts.extend(pcd.vertices)
-        surface.points = open3d.utility.Vector3dVector(np.asarray(pts))
+        self.skull.points = open3d.utility.Vector3dVector(np.asarray(pts))
         trimesh = open3d.geometry.TriangleMesh()
-        trimesh.vertices = surface.points
+        trimesh.vertices = self.skull.points
         trimesh = trimesh.remove_duplicated_vertices()
-        surface.points = trimesh.vertices
-        open3d.visualization.draw_geometries([surface])
+        self.skull.points = trimesh.vertices
+        # open3d.visualization.draw_geometries([self.skull])
 
     def visualize_mesh_with_matplotlib(self):
         """
@@ -213,3 +239,4 @@ class Mesh:
 
 m = Mesh("./STL/CRANIAL HEADS_Head_1_001.stl")
 m.remove_inner_layer()
+m.extract_labeled_data()
