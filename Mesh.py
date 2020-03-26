@@ -4,6 +4,7 @@ from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 import os
 from scipy.spatial import ConvexHull
+from scipy.spatial import Delaunay
 from scipy.spatial.transform import Rotation as R
 
 import open3d
@@ -76,7 +77,9 @@ class Mesh:
 
     def extract_labeled_data(self):
         """
-        ...
+        Creates approximate defect, labels defect contour points as separate
+        class from rest of skull points. Generates 15x15x15 matrix per defect as
+        training data input for DL model
 
         Args:
             pcd: point cloud
@@ -89,7 +92,7 @@ class Mesh:
             np.asarray(self.skull.get_min_bound()))
         
         camera = [diameter/3.5, diameter/3.5, diameter]
-        radius = diameter/2.15 # max: 2.5 # arbitrarily decided, hard-coded
+        radius = diameter/2.15
         camera_frame = open3d.geometry.TriangleMesh.create_coordinate_frame(
             origin=camera)
 
@@ -104,13 +107,21 @@ class Mesh:
 
         # find points that form convex hull of defect using scipy
         hull = ConvexHull(defect_on_xy)
-        print(len(defect_on_xy))
-        print(hull.vertices)
-        defect_contour = [defect_vertices[i] for i in hull.vertices]
-        interior_defect = [pt for pt in defect_vertices if pt not in defect_contour]
+
+        # Smooth out convex hull (TODO)
+        # xhull = defect_vertices[hull.vertices,0]
+        # yhull = defect_vertices[hull.vertices,1]
+        # xhull, yhull = self.__generate_spline(xhull, yhull, closed=True)
+
+        defect_contour = np.asarray([defect_vertices[i] for i in hull.vertices])
+
+        if not isinstance(defect_contour[:,0:2],Delaunay):
+            hull = Delaunay(defect_contour[:,0:2])
+        interior_defect = [pt for pt in np.asarray(self.skull.points)
+            if hull.find_simplex(pt[0:2])>=0 and pt[2] > 0.20]
 
         # subtract those points from defect_vertices
-        #   and remove remaining defect_vertices from skull.points (TODO)
+        #   and remove remaining defect_vertices from skull.points
         defect_skull = open3d.geometry.PointCloud()
         defect_skull_vertices = [list(pt)
             for pt in np.asarray(self.skull.points)
@@ -126,23 +137,23 @@ class Mesh:
         z_step = (z_max-z_min)/res
         
         input_data = np.zeros((res, res, res))
+        # input_pcl = open3d.geometry.PointCloud()
+        # input_pcl_vertices = []
         for i in range(res):
             for j in range(res):
                 for k in range(res):
                     bbox = open3d.geometry.AxisAlignedBoundingBox(min_bound=np.asarray([x_min+i*x_step, y_min+j*y_step, z_min+k*z_step]).T,
-                                               max_bound=np.asarray([x_min+(i+1)*x_step, y_min+(j+1)*y_step, z_min+(k+1)*z_step]).T)
+                                                                max_bound=np.asarray([x_min+(i+1)*x_step, y_min+(j+1)*y_step, z_min+(k+1)*z_step]).T)
                     cropped = defect_skull.crop(bbox)
                     if cropped.has_points():
+                        # input_pcl_vertices.append([x_min+(i+0.5)*x_step, y_min+(j+0.5)*y_step, z_min+(k+0.5)*z_step])
                         input_data[i,j,k] = 1
                         for l in np.asarray(cropped.points):
-                            # print(l)
-                            # print(defect_contour)
                             if l in np.asarray(defect_contour):
                                 input_data[i,j,k] = 2
 
-        # for i in input_data:
-        #     print(i)
-        # open3d.visualization.draw_geometries([defect_skull, camera_frame])
+        # input_pcl.points = open3d.utility.Vector3dVector(np.asarray(input_pcl_vertices))
+        open3d.visualization.draw_geometries([defect_skull, camera_frame])
 
     @staticmethod
     def normalize(pcd):
@@ -235,6 +246,45 @@ class Mesh:
         ax.set_ylabel('Normalized y')
         ax.set_zlabel('Normalized z')
         plt.show()
+
+    def __generate_spline(self, x, y, closed=False, steps=20):
+        """
+        Credit: https://github.com/andrea-cuttone/geoplotlib/blob/master/geoplotlib/core.py
+
+        catmullrom spline
+        http://www.mvps.org/directx/articles/catmull/
+        """
+
+        if closed:
+            x = x.tolist()
+            x.insert(0, x[-1])
+            x.append(x[1])
+            x.append(x[2])
+
+            y = y.tolist()
+            y.insert(0, y[-1])
+            y.append(y[1])
+            y.append(y[2])
+
+        points = np.vstack((x,y)).T
+
+        curve = []
+
+        if not closed:
+            curve.append(points[0])
+
+        for j in range(1, len(points)-2):
+            for s in range(steps):
+                t = 1. * s / steps
+                p0, p1, p2, p3 = points[j-1], points[j], points[j+1], points[j+2]
+                pnew = 0.5 *((2 * p1) + (-p0 + p2) * t + (2*p0 - 5*p1 + 4*p2 - p3) * t**2 + (-p0 + 3*p1- 3*p2 + p3) * t**3)
+                curve.append(pnew)
+
+        if not closed:
+            curve.append(points[-1])
+
+        curve = np.array(curve)
+        return curve[:, 0], curve[:, 1]
 
 
 m = Mesh("./STL/CRANIAL HEADS_Head_1_001.stl")
