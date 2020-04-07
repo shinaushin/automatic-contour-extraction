@@ -196,6 +196,8 @@ class Mesh:
         """
         Remove inner layer of skull model to only obtain outer surface
 
+        @TODO: investigate accuracy or better way
+
         Args:
             None
 
@@ -221,7 +223,7 @@ class Mesh:
         trimesh.vertices = self.skull.points
         trimesh = trimesh.remove_duplicated_vertices()
         self.skull.points = trimesh.vertices
-        # open3d.visualization.draw_geometries([self.skull])
+        open3d.visualization.draw_geometries([self.skull])
 
     def visualize_mesh_with_matplotlib(self):
         """
@@ -289,4 +291,4 @@ class Mesh:
 
 m = Mesh("./STL/CRANIAL HEADS_Head_1_001.stl")
 m.remove_inner_layer()
-m.extract_labeled_data()
+# m.extract_labeled_data()
